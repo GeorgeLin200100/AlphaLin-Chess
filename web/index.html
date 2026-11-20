@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>中象自博弈训练看板</title>
+<style>
+  :root { --bg:#0f1216; --panel:#171c22; --line:#2a323c; --txt:#e6edf3; --dim:#8b98a5;
+          --red:#e5534b; --green:#3fb950; --blue:#58a6ff; --gold:#d29922; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font:14px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
+  header { padding:16px 22px; border-bottom:1px solid var(--line); display:flex;
+           align-items:baseline; gap:18px; flex-wrap:wrap; }
+  h1 { font-size:17px; margin:0; font-weight:600; }
+  .pill { padding:2px 9px; border:1px solid var(--line); border-radius:99px; font-size:12px; color:var(--dim); }
+  .pill b { color:var(--txt); font-weight:600; }
+  .dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:6px; }
+  main { padding:18px 22px 40px; display:grid; gap:16px;
+         grid-template-columns: repeat(auto-fit, minmax(430px, 1fr)); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .card h2 { font-size:13px; margin:0 0 4px; font-weight:600; color:var(--dim); letter-spacing:.03em; }
+  .card .sub { font-size:12px; color:var(--dim); margin-bottom:8px; }
+  canvas { width:100%; height:190px; display:block; }
+  .wide { grid-column: 1 / -1; }
+  .row { display:flex; gap:22px; flex-wrap:wrap; }
+  .board { display:grid; grid-template-columns:repeat(9, 42px); grid-template-rows:repeat(10, 42px);
+           background:#e8d3a9; border-radius:6px; padding:4px; }
+  .cell { position:relative; display:flex; align-items:center; justify-content:center;
+          font-size:24px; user-select:none; }
+  .cell::before { content:""; position:absolute; inset:0; border:1px solid #b99b68; }
+  .cell.red { color:#b3261e; } .cell.black { color:#1f2937; }
+  .cell.last { background:#f6e3a1; }
+  .pv { font-size:12px; color:var(--dim); max-width:320px; }
+  .bar { height:8px; background:#39424e; border-radius:4px; overflow:hidden; margin:3px 0 7px; }
+  .bar > i { display:block; height:100%; background:var(--green); }
+  select, button { background:#20262e; color:var(--txt); border:1px solid var(--line);
+                   border-radius:6px; padding:5px 10px; font-size:13px; }
+  button:hover { border-color:#4b5563; }
+  .legend { font-size:12px; color:var(--dim); }
+  .k { color:var(--txt); font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+<header>
+  <h1>中国象棋 · AlphaZero 学习看板</h1>
+  <span class="pill" id="p-alive"><span class="dot" style="background:#555"></span>状态</span>
+  <span class="pill">迭代 <b id="s-iter">-</b></span>
+  <span class="pill">自博弈 <b id="s-games">-</b> 局</span>
+  <span class="pill">已跑 <b id="s-time">-</b></span>
+  <span class="pill">Elo <b id="s-elo">-</b></span>
+  <span class="pill">vs 随机 <b id="s-wr">-</b></span>
+  <a class="pill" href="/play" style="color:var(--blue);text-decoration:none">去和它下棋 →</a>
+</header>
+
+<main>
+  <div class="card"><h2>棋力：对随机棋手的胜率</h2>
+    <div class="sub">每轮打分 10 局，和棋算半分。这条曲线是最直接的“越下越好”证据。</div>
+    <canvas id="c-win"></canvas></div>
+
+  <div class="card"><h2>训练损失</h2>
+    <div class="sub">policy loss（策略交叉熵，越低越接近 MCTS 的搜索分布）+ value loss。</div>
+    <canvas id="c-loss"></canvas></div>
+
+  <div class="card"><h2>自博弈局数</h2>
+    <div class="sub">累计局数随时间增长；斜率 = 你的机器每小时能跑多少局。</div>
+    <canvas id="c-games"></canvas></div>
+
+  <div class="card"><h2>Elo（门控估计）</h2>
+    <div class="sub">每 40 轮让新模型挑战卫冕者，胜率 ≥55% 才换人；这里画的是按挑战结果更新的 Elo。</div>
+    <canvas id="c-elo"></canvas></div>
+
+  <div class="card wide">
+    <h2>对局回放</h2>
+    <div class="sub">抽样保存的自博弈对局。棋盘下方数字是该步 MCTS 给出的前 5 个候选着法的访问占比。</div>
+    <div class="row" style="margin-top:10px">
+      <div>
+        <div id="board" class="board"></div>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+          <select id="game-select"></select>
+          <button id="btn-prev">◀</button>
+          <button id="btn-next">▶</button>
+          <span class="legend" id="ply-info"></span>
+        </div>
+      </div>
+      <div style="min-width:300px">
+        <div class="legend" id="res-info"></div>
+        <div id="pv-box" style="margin-top:10px"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const CH = {R:'车',N:'马',B:'相',A:'仕',K:'帅',C:'炮',P:'兵'};
+const CH_B = {R:'车',N:'马',B:'象',A:'士',K:'将',C:'炮',P:'卒'};
+let rows = [], games = [], cur = null, ply = 0, frames = [];
+
+function line(canvas, series, opts={}) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w*dpr; canvas.height = h*dpr;
+  const g = canvas.getContext('2d');
+  g.scale(dpr,dpr);
+  g.clearRect(0,0,w,h);
+  const padL = 38, padR = 8, padT = 10, padB = 18;
+  const xs = series[0]?.data.length ? series[0].data.map(d=>d[0]) : [];
+  let allY = series.flatMap(s=>s.data.map(d=>d[1])).filter(v=>v!==null && isFinite(v));
+  if (!xs.length || !allY.length) { g.fillStyle='#8b98a5'; g.font='12px sans-serif';
+    g.fillText('等待数据…', padL, h/2); return; }
+  let minX = Math.min(...xs), maxX = Math.max(...xs);
+  let minY = opts.min!==undefined ? opts.min : Math.min(...allY);
+  let maxY = opts.max!==undefined ? opts.max : Math.max(...allY);
+  if (maxY - minY < 1e-6) { maxY += 1; minY -= 1; }
+  const X = x => padL + (x-minX)/(maxX-minX||1)*(w-padL-padR);
+  const Y = y => h-padB - (y-minY)/(maxY-minY)*(h-padT-padB);
+  // 网格
+  g.strokeStyle='#232b34'; g.lineWidth=1; g.font='11px sans-serif'; g.fillStyle='#6b7684';
+  for (let i=0;i<=4;i++){
+    const y = padT + i*(h-padT-padB)/4;
+    g.beginPath(); g.moveTo(padL,y); g.lineTo(w-padR,y); g.stroke();
+    const val = maxY - i*(maxY-minY)/4;
+    g.fillText((opts.pct? (val*100).toFixed(0)+'%' : val.toFixed(opts.dp??2)), 4, y+3);
+  }
+  for (const s of series) {
+    g.strokeStyle = s.color; g.lineWidth = 1.8; g.beginPath(); let started=false;
+    for (const [x,y] of s.data) {
+      if (y===null || !isFinite(y)) continue;
+      const px=X(x), py=Y(y);
+      started ? g.lineTo(px,py) : (g.moveTo(px,py), started=true);
+    }
+    g.stroke();
+    if (s.data.length && s.dots!==false) {
+      const [lx,ly] = s.data[s.data.length-1];
+      if (ly!==null) { g.fillStyle=s.color; g.beginPath(); g.arc(X(lx),Y(ly),2.6,0,7); g.fill(); }
+    }
+  }
+  // 图例
+  let lx = padL + 4;
+  g.font='11px sans-serif';
+  for (const s of series) { g.fillStyle=s.color; g.fillRect(lx, 2, 8, 3);
+    g.fillStyle='#8b98a5'; g.fillText(s.name, lx+12, 7); lx += 16 + g.measureText(s.name).width; }
+}
+
+async function tick() {
+  const r = await fetch('/api/stats').then(r=>r.json());
+  rows = r.rows; const st = r.status || {};
+  document.getElementById('s-iter').textContent = st.iter ?? '-';
+  document.getElementById('s-games').textContent = st.games ?? '-';
+  document.getElementById('s-time').textContent = st.elapsed_min ? (st.elapsed_min/60).toFixed(1)+' h' : '-';
+  document.getElementById('s-elo').textContent = st.elo ?? '-';
+  const wr = st.winrate_random;
+  document.getElementById('s-wr').textContent = (wr===null||wr===undefined) ? '-' : (wr*100).toFixed(0)+'%';
+  const alive = r.alive;
+  const dot = document.querySelector('#p-alive .dot');
+  dot.style.background = alive ? '#3fb950' : '#8b949e';
+  document.querySelector('#p-alive').innerHTML =
+    `<span class="dot" style="background:${alive?'#3fb950':'#8b949e'}"></span>${alive?'训练中':'已结束'}`;
+
+  const wrRows = rows.filter(x=>x.winrate_random!==null);
+  line(document.getElementById('c-win'),
+    [{name:'胜率', color:'#3fb950', data: wrRows.map(x=>[x.games, x.winrate_random])},
+     {name:'负率', color:'#e5534b', data: wrRows.map(x=>[x.games, 1-x.winrate_random-(x.draw_random||0)])}],
+    {min:0, max:1, pct:true});
+  line(document.getElementById('c-loss'),
+    [{name:'policy', color:'#58a6ff', data: rows.filter(x=>x.loss_p).map(x=>[x.games, x.loss_p])},
+     {name:'value', color:'#d29922', data: rows.filter(x=>x.loss_v!=null).map(x=>[x.games, x.loss_v])}],
+    {dp:2});
+  line(document.getElementById('c-games'),
+    [{name:'累计局数', color:'#58a6ff', data: rows.map(x=>[x.iter, x.games])}], {dp:0});
+  line(document.getElementById('c-elo'),
+    [{name:'Elo', color:'#a371f7', data: rows.map(x=>[x.games, x.elo])}], {dp:0});
+}
+
+// ---------------- 对局回放 ----------------
+function fenToSquares(fen) {
+  const rows = fen.split(' ')[0].split('/');
+  const sq = new Array(90).fill(null);
+  rows.forEach((row, i) => {
+    const y = 9 - i; let x = 0;
+    for (const ch of row) {
+      if (/\d/.test(ch)) { x += +ch; continue; }
+      sq[y*9+x] = {t: ch.toUpperCase(), red: ch === ch.toUpperCase()};
+      x++;
+    }
+  });
+  return sq;
+}
+
+function renderBoard(sq, last) {
+  const el = document.getElementById('board');
+  el.innerHTML = '';
+  for (let y=9; y>=0; y--) for (let x=0; x<9; x++) {
+    const i = y*9+x, p = sq[i];
+    const d = document.createElement('div');
+    d.className = 'cell';
+    if (p) { d.textContent = (p.red?CH:CH_B)[p.t]; d.classList.add(p.red?'red':'black'); }
+    if (last && ((i===last[0])||(i===last[1]))) d.classList.add('last');
+    el.appendChild(d);
+  }
+}
+
+function buildFrames(game) {
+  let b = { R:'车',N:'马',B:'相',A:'仕',K:'帅',C:'炮',P:'兵' };
+  const sq = fenToSquares('rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w');
+  const fr = [{sq: JSON.parse(JSON.stringify(sq)), last:null, pv:{}}];
+  for (const mv of game.moves) {
+    const piece = sq[mv.frm];
+    sq[mv.to] = piece; sq[mv.frm] = null;
+    fr.push({sq: JSON.parse(JSON.stringify(sq)), last:[mv.frm,mv.to], pv: mv.p||{}});
+  }
+  return fr;
+}
+
+function showPly() {
+  if (!cur) return;
+  const f = frames[ply];
+  renderBoard(f.sq, f.last);
+  document.getElementById('ply-info').textContent = `第 ${ply} / ${frames.length-1} 步`;
+  const box = document.getElementById('pv-box');
+  const pv = Object.entries(f.pv||{}).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  box.innerHTML = pv.length ? pv.map(([mv,v])=>`<div class="legend">${mv.replace(',','→')}
+      <div class="bar"><i style="width:${Math.max(2,v*100)}%"></i></div></div>`).join('')
+    : '<div class="legend">（起始局面）</div>';
+}
+
+async function loadGames() {
+  games = await fetch('/api/games').then(r=>r.json());
+  const sel = document.getElementById('game-select');
+  sel.innerHTML = games.map((g,i)=>`<option value="${i}">${g.name} · ${g.iter}轮 · ${g.tag}</option>`).join('')
+    || '<option>暂无对局</option>';
+  if (games.length) selectGame(0);
+}
+
+function selectGame(i) {
+  cur = games[i]; ply = 0;
+  if (!cur) return;
+  frames = buildFrames(cur);
+  document.getElementById('res-info').textContent =
+    `结果：${cur.result===1?'红胜':cur.result===-1?'黑胜':'和棋'} · ${cur.moves.length} 步 · 第 ${cur.iter} 轮`;
+  showPly();
+}
+
+document.getElementById('game-select').onchange = e => selectGame(+e.target.value);
+document.getElementById('btn-prev').onclick = () => { ply = Math.max(0, ply-1); showPly(); };
+document.getElementById('btn-next').onclick = () => { ply = Math.min(frames.length-1, ply+1); showPly(); };
+
+tick(); setInterval(tick, 15000);
+loadGames(); setInterval(loadGames, 120000);
+window.addEventListener('resize', tick);
+</script>
+</body>
+</html>

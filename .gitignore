@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 训练产物（体积大、可重建）
+runs/
+logs/
+wheels/
+*.npz
+*.npz.tmp
+*.whl
+
+# 杂项
+.DS_Store
+*.swp
+.pytest_cache/
