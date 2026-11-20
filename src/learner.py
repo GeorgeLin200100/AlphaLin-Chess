@@ -224,7 +224,7 @@ def main():
     ap.add_argument("--gate-every", type=int, default=20)
     ap.add_argument("--gate-games", type=int, default=20)
     ap.add_argument("--warmstart", type=int, default=300)
-    ap.add_argument("--use-q", action="store_true", default=True)
+    ap.add_argument("--use-q", action="store_true", default=False)
     ap.add_argument("--seed", type=int, default=11)
     args = ap.parse_args()
     args.run = os.path.abspath(args.run)

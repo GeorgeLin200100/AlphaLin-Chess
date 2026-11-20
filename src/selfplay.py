@@ -77,8 +77,9 @@ def play_self_game(net, sims, rng, nprng, noise=True, use_q=False,
         b2.make(m["frm"], m["to"])
     z_signed = np.array([0.0 if res == 0 else (z if s == RED else -z)
                          for s in sides], dtype=np.float32)
-    # 价值目标 = 一半真实胜负 + 一半搜索价值，降方差
-    z_final = 0.5 * z_signed + 0.5 * np.asarray(z_root, dtype=np.float32)
+    # 价值目标就是最终胜负（不做自指混合：搜索价值由网络自己给出，
+    # 掺进去等于让网络拟合自己的判断，实测会让棋力缓慢下滑）
+    z_final = z_signed
 
     # 左右镜像增强：同一局的另一份数据
     Xm = X.reshape(-1, 14, 10, 9)[:, :, :, ::-1].reshape(len(X), -1).copy()
