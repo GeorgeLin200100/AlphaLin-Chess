@@ -72,7 +72,9 @@ class UciEngine:
 
 
 def iccs_to_move(s):
-    """解析 a1..i10 形式的着法（rank 可能是两位数）。"""
+    """解析 a1..i10 形式的着法（rank 可能是两位数）。非法/空着返回 None。"""
+    if not s or not s[0].isalpha() or (len(s) > 1 and not s[1].isdigit()):
+        return None
     fx = ord(s[0]) - 97
     i = 1
     while s[i].isdigit():
@@ -131,6 +133,12 @@ def play_game(net, opponent, sims, net_side, rng, max_ply=160):
         else:
             best = eng.bestmove(iccs_hist)
             mv = iccs_to_move(best)
+            if mv is None:          # 引擎认输/给出空着，按对手获胜处理
+                res = -board.side
+                break
+            if mv not in board.legal_moves():   # 坐标解析对不上，判引擎负
+                res = -board.side
+                break
         iccs_hist.append(move_to_iccs(*mv))
         board.make(*mv)
     if eng:

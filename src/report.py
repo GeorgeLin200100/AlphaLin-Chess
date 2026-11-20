@@ -154,9 +154,14 @@ def main():
     build_snapshot(rows, games, os.path.join(ROOT, "web", "snapshot.html"))
 
     last = rows[-1] if rows else {}
-    total = sum(r["results"].get("red", 0) + r["results"].get("black", 0) +
-                r["results"].get("draw", 0) for r in rows)
-    hours = sum(r.get("selfplay_s", 0) + r.get("train_s", 0) for r in rows) / 3600
+    total = int(last.get("games", 0))          # stats 里的 results/games 是累计值，取最后一行
+    hours = 0.0
+    st_path = os.path.join(args.run, "status.json")
+    if os.path.exists(st_path):
+        try:
+            hours = float(json.load(open(st_path)).get("elapsed_min", 0)) / 60
+        except Exception:
+            hours = 0.0
     evals = [r["winrate_random"] for r in rows if r.get("winrate_random") is not None]
     import statistics
     first = statistics.mean(evals[:8]) if evals else float("nan")
@@ -168,7 +173,7 @@ def main():
         "",
         f"- 总迭代 {last.get('iter', 0)}　总对局 {total}　用时 {hours:.1f} 小时（{total/max(hours,1e-6):.0f} 局/小时）",
         f"- 对随机棋手胜率：前 8 次 {first:.2f} → 中段 {mid:.2f} → 最近 8 次 {tail:.2f}",
-        f"- 结果构成：红胜 {last['results'].get('red', 0)} / 黑胜 {last['results'].get('black', 0)} / 和棋 {last['results'].get('draw', 0)}（最后一轮）",
+        f"- 结果构成：红胜 {last.get('results', {}).get('red', 0)} / 黑胜 {last.get('results', {}).get('black', 0)} / 和棋 {last.get('results', {}).get('draw', 0)}",
         f"- 最近 policy/value loss: {last.get('loss_p')} / {last.get('loss_v')}",
         f"- 曲线图: reports/curves.png　离线看板: web/snapshot.html",
     ]
