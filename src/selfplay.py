@@ -82,7 +82,8 @@ def play_self_game(net, sims, rng, nprng, noise=True, use_q=False,
     z_final = z_signed
 
     # 左右镜像增强：同一局的另一份数据
-    Xm = X.reshape(-1, 14, 10, 9)[:, :, :, ::-1].reshape(len(X), -1).copy()
+    n_pl = X.shape[1] // 90
+    Xm = X.reshape(-1, n_pl, 10, 9)[:, :, :, ::-1].reshape(len(X), -1).copy()
     pim = MIRROR_TABLE[pi_idx]
 
     meta = {"result": res, "plies": len(xs), "moves": moves_log}

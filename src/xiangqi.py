@@ -470,29 +470,69 @@ def index_to_move(i):
     return i // 90, i % 90
 
 
-def encode_sparse(board):
-    """当前局面稀疏特征下标（约 32 个），供单样本快速推理。"""
-    import numpy as np
-    codes = board.codes
-    nz = np.nonzero(codes)[0]
-    v = codes[nz].astype(np.int32) - 1
-    if board.side == BLACK:
-        v = np.where(v < 7, v + 7, v - 7)
-    return v * 90 + nz.astype(np.int32)
+N_PLANES = 18          # 14 棋子 + 4 威胁/意图平面
 
 
-def encode_planes(board):
-    """14 平面 x 90，永远站在"当前走子方"视角。"""
-    import numpy as np
-    p = np.zeros((14, 90), dtype=np.float32)
+def _attack_targets(board, side):
+    """某一方所有伪合法着法的落点（含被牵制的子），用来标"被攻击的格"。"""
+    old = board.side
+    board.side = side
+    try:
+        return {to for _, to in board.gen_pseudo()}
+    finally:
+        board.side = old
+
+
+def feature_indices(board):
+    """当前局面的稀疏特征下标（视角永远是"该走子的一方"）。
+
+    平面 0-6: 我的 车马相仕帅炮兵；7-13: 对方的对应子
+    平面 14 : 我的子正被对方攻击
+    平面 15 : 对方的子正被我攻击
+    平面 16 : 对方上一步的落点
+    平面 17 : 对方上一步的起点
+    """
     me = board.side
-    for idx, piece in enumerate(board.sq):
+    out = []
+    sq = board.sq
+    for idx, piece in enumerate(sq):
         if piece is None:
             continue
         t, s = piece
-        plane = t if s == me else 7 + t
-        p[plane, idx] = 1.0
-    return p.reshape(-1)
+        out.append((t if s == me else 7 + t) * 90 + idx)
+
+    opp_targets = _attack_targets(board, -me)
+    my_targets = _attack_targets(board, me)
+    for idx, piece in enumerate(sq):
+        if piece is None:
+            continue
+        side = piece[1]
+        if side == me and idx in opp_targets:
+            out.append(14 * 90 + idx)
+        elif side != me and idx in my_targets:
+            out.append(15 * 90 + idx)
+
+    if board.history:
+        frm, to, *_ = board.history[-1]
+        out.append(16 * 90 + to)
+        out.append(17 * 90 + frm)
+    return out
+
+
+def encode_sparse(board):
+    """稀疏特征下标，供单样本快速推理。"""
+    import numpy as np
+    return np.asarray(feature_indices(board), dtype=np.int32)
+
+
+def encode_planes(board):
+    """稠密特征向量（训练用），长度 N_PLANES*90。"""
+    import numpy as np
+    v = np.zeros(N_PLANES * 90, dtype=np.float32)
+    idx = feature_indices(board)
+    if idx:
+        v[np.asarray(idx, dtype=np.int32)] = 1.0
+    return v
 
 
 def mirror_index(idx):

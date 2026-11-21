@@ -22,7 +22,7 @@ sys.path.insert(0, HERE)
 from xiangqi import (Board, START_FEN, encode_planes, encode_sparse, material,
                      move_to_index, mirror_move_index, index_to_move,
                      RED, BLACK, TYPE_CHARS, adjudicate, is_repetition)
-from nn import Net, N_POL
+from nn import Net, N_POL, N_IN
 from mcts import search
 
 TOP_K = 16
@@ -184,7 +184,7 @@ class Trainer:
         if len(self.buffer) < 200:
             return None
         a = self.args
-        X = np.empty((a.batch, 14 * 90), dtype=np.float32)
+        X = np.empty((a.batch, N_IN), dtype=np.float32)
         PI = np.zeros((a.batch, N_POL), dtype=np.float32)
         Z = np.empty((a.batch, 1), dtype=np.float32)
         PM = np.ones((a.batch, 1), dtype=np.float32)
@@ -266,7 +266,8 @@ class Trainer:
                     self.buffer.append((xs8, pi, zz))
                     it_samples += 1
                     # 镜像增强
-                    xs_m = xs8.reshape(14, 10, 9)[:, :, ::-1].reshape(-1).copy()
+                    n_pl = len(xs8) // 90
+                    xs_m = xs8.reshape(n_pl, 10, 9)[:, :, ::-1].reshape(-1).copy()
                     pi_m = [(mirror_move_index(mi), p) for mi, p in pi]
                     self.buffer.append((xs_m, pi_m, zz))
                     it_samples += 1

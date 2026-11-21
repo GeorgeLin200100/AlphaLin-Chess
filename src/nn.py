@@ -5,7 +5,7 @@
 """
 import numpy as np
 
-N_IN, H1, H2, N_POL = 14 * 90, 256, 256, 90 * 90
+N_IN, H1, H2, N_POL = 18 * 90, 256, 256, 90 * 90   # 18 平面（14 棋子 + 4 威胁）
 
 
 def zeros_init(rng, fan_in, shape):

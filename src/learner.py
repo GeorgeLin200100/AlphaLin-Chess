@@ -18,7 +18,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from nn import Net, N_POL
+from nn import Net, N_POL, N_IN
 from xiangqi import (Board, START_FEN, encode_planes, material,
                      adjudicate, RED, BLACK)
 from mcts import search
@@ -81,7 +81,7 @@ class Learner:
         if len(self.buffer) < 300:
             return None
         a = self.a
-        X = np.empty((a.batch, 14 * 90), dtype=np.float32)
+        X = np.empty((a.batch, N_IN), dtype=np.float32)
         PI = np.zeros((a.batch, N_POL), dtype=np.float32)
         Z = np.empty((a.batch, 1), dtype=np.float32)
         PM = np.ones((a.batch, 1), dtype=np.float32)
