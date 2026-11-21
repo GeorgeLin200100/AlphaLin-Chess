@@ -58,7 +58,9 @@ class Learner:
         os.makedirs(args.queue, exist_ok=True)
         self.log_path = os.path.join(args.run, "events.log")
 
-        if args.warmstart:
+        if args.resume:
+            self.resume()
+        elif args.warmstart:
             losses = material_warmstart(self.net, steps=args.warmstart, seed=args.seed)
             self.log(f"热启动 {args.warmstart} 步, loss {losses[0]:.3f} -> {losses[-1]:.3f}")
         for k in self.net.p:
@@ -71,6 +73,37 @@ class Learner:
         print(line, flush=True)
         with open(self.log_path, "a") as f:
             f.write(line + "\n")
+
+    def resume(self):
+        """从 runs/<run>/model.npz 续训：载入权重、用最近队列样本预热 buffer。"""
+        a = self.a
+        if not os.path.exists(a.model):
+            self.log(f"续训失败：{a.model} 不存在，退回热启动")
+            material_warmstart(self.net, steps=a.warmstart, seed=a.seed)
+            return
+        d = np.load(a.model)
+        for k in self.net.p:
+            self.net.p[k] = d[k].astype(np.float32)
+        bp = os.path.join(a.run, "best.npz")
+        if os.path.exists(bp):
+            db = np.load(bp)
+            for k in self.best.p:
+                self.best.p[k] = db[k].astype(np.float32)
+            self.log(f"续训：权重来自 {a.model}，门控基准来自 {bp}")
+        else:
+            for k in self.net.p:
+                self.best.p[k] = self.net.p[k].copy()
+            self.log(f"续训：权重来自 {a.model}，门控基准同此")
+        files = sorted(glob.glob(os.path.join(a.queue, "*.npz")))[-max(0, a.resume_files):]
+        for f in files:
+            self.seen.add(os.path.basename(f))
+            try:
+                for item in load_queue_file(f):
+                    self.buffer.append(item)
+            except Exception as e:
+                self.log(f"预热样本失败 {os.path.basename(f)}: {e}")
+        self.log(f"续训：预热 buffer {len(self.buffer)} 条（{len(files)} 个旧队列文件已标记消费）")
+
 
     def publish(self):
         tmp = self.a.model + ".tmp.npz"
@@ -145,7 +178,7 @@ class Learner:
         signal.signal(signal.SIGINT, on_term)
 
         deadline = time.time() + self.a.hours * 3600
-        last_train_games = 0
+        last_train_games = -self.a.train_every if self.a.resume else 0
         while time.time() < deadline:
             # 消费新样本
             files = sorted(glob.glob(os.path.join(self.a.queue, "*.npz")))
@@ -228,6 +261,8 @@ def main():
     ap.add_argument("--gate-every", type=int, default=20)
     ap.add_argument("--gate-games", type=int, default=20)
     ap.add_argument("--warmstart", type=int, default=300)
+    ap.add_argument("--resume", action="store_true", default=False)
+    ap.add_argument("--resume-files", type=int, default=400)
     ap.add_argument("--use-q", action="store_true", default=False)
     ap.add_argument("--seed", type=int, default=11)
     args = ap.parse_args()

@@ -103,10 +103,14 @@ def greedy_move(board, rng):
     return best
 
 
-def play_game(net, opponent, sims, net_side, rng, max_ply=160):
+def play_game(net, opponent, sims, net_side, rng, max_ply=160, start_moves=None):
     board = Board(START_FEN)
     iccs_hist = []
     eng = None
+    if start_moves:
+        for mv in start_moves:
+            iccs_hist.append(move_to_iccs(*mv))
+            board.make(*mv)
     if opponent == "sf":
         eng = UciEngine()
     while True:
