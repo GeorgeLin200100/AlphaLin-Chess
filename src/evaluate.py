@@ -117,7 +117,7 @@ def play_game(net, opponent, sims, net_side, rng, max_ply=160):
             res = adjudicate(board)
             break
         if board.side == net_side:
-            visits, _ = search(board, net, sims=sims)
+            visits, _ = search(board, net, sims=sims, safety=True)
             if not visits:
                 res = -board.side
                 break
