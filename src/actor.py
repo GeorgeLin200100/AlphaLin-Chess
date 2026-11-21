@@ -29,6 +29,7 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-q", action="store_true")
     ap.add_argument("--temp-plies", type=int, default=60)
+    ap.add_argument("--drop-adjudicated", action="store_true", default=False)
     args = ap.parse_args()
 
     os.makedirs(args.queue, exist_ok=True)
@@ -44,7 +45,7 @@ def main():
         time.sleep(1)
 
     net, mtime = None, None
-    games, t_start = 0, time.time()
+    games, skipped, t_start = 0, 0, time.time()
     last_games_save = 0
     while time.time() < deadline:
         mt = os.path.getmtime(args.model)
@@ -60,9 +61,12 @@ def main():
                                        temp_plies=args.temp_plies)
         if payload is None:
             continue
+        games += 1
+        if meta.get("adjudicated") and args.drop_adjudicated:
+            skipped += 1
+            continue
         gid = f"a{args.id}_{int(time.time()*1000)}_{games}"
         save_game(args.queue, gid, payload, meta)
-        games += 1
 
         # 每 40 局存一份可回放的对局
         if games - last_games_save >= 40:
@@ -78,7 +82,7 @@ def main():
 
         elapsed = max(time.time() - t_start, 1)
         with open(os.path.join(args.queue, f"status_a{args.id}.json"), "w") as f:
-            json.dump({"id": args.id, "games": games,
+            json.dump({"id": args.id, "games": games, "skipped": skipped,
                        "games_per_hour": round(games / elapsed * 3600, 1),
                        "elapsed_min": round(elapsed / 60, 1),
                        "pid": os.getpid()}, f)

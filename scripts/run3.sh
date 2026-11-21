@@ -12,16 +12,16 @@ mkdir -p "$QUEUE" "$RUN/games"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 
 .venv/bin/python src/learner.py --run "$RUN" --queue "$QUEUE" --model "$MODEL" \
-    --hours "$HOURS" --buffer 30000 --train-every 4 --lr 5e-4 \
+    --hours "$HOURS" --buffer 30000 --train-every 4 --lr 5e-4 --steps 20 \
     --eval-every 10 --eval-games 40 --gate-every 40 --gate-games 30 &
 LPID=$!
 sleep 4
 
 .venv/bin/python src/actor.py --id 1 --queue "$QUEUE" --run "$RUN" --model "$MODEL" \
-    --hours "$HOURS" --sims "$SIMS" --seed 1 --no-q &
+    --hours "$HOURS" --sims "$SIMS" --seed 1 --no-q --drop-adjudicated &
 P1=$!
 .venv/bin/python src/actor.py --id 2 --queue "$QUEUE" --run "$RUN" --model "$MODEL" \
-    --hours "$HOURS" --sims "$SIMS" --seed 2 --no-q &
+    --hours "$HOURS" --sims "$SIMS" --seed 2 --no-q --drop-adjudicated &
 P2=$!
 
 trap 'kill -TERM $LPID $P1 $P2 2>/dev/null' TERM INT

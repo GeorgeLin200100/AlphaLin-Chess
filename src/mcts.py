@@ -68,13 +68,27 @@ def select(node, c_puct):
     return best
 
 
-def search(board, net, sims=100, c_puct=1.6, dirichlet=0.0, rng=None, use_q=False):
+def search(board, net, sims=100, c_puct=1.6, dirichlet=0.0, rng=None, use_q=False,
+           root_topk=0, force_boost=1.0):
     """返回 (visits: {(frm,to): n}, root_value)。不会修改传入的 board。"""
     b = board.copy()
     root = Node()
     root_val = expand(root, b, net, use_q)
     if root.terminal:
         return {}, root_val
+
+    if force_boost > 1.0:
+        for ch in root.children:
+            if b.sq[ch.move[1]] is not None:      # 吃子着法先验放大
+                ch.P *= force_boost
+
+    if root_topk and len(root.children) > root_topk:
+        # 不平均用力：只保留先验最高的 k 个候选，整体重归一化
+        root.children.sort(key=lambda c: -c.P)
+        root.children = root.children[:root_topk]
+        tot = sum(c.P for c in root.children) or 1.0
+        for c in root.children:
+            c.P /= tot
 
     if dirichlet > 0:
         noise = (rng or np.random.default_rng()).dirichlet([dirichlet] * len(root.children))

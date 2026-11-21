@@ -23,12 +23,13 @@ def play_self_game(net, sims, rng, nprng, noise=True, use_q=False,
     board = Board(START_FEN)
     xs, pi_idx, pi_p, z_root = [], [], [], []
     moves_log = []
+    adjudicated = False
     while board.move_count < max_ply:
         res = board.result()
         if res is not None:
             break
         if is_repetition(board):
-            res = 0
+            res, adjudicated = 0, True
             break
         visits, root_value = search(board, net, sims=sims,
                                     dirichlet=0.3 if noise else 0.0,
@@ -60,7 +61,7 @@ def play_self_game(net, sims, rng, nprng, noise=True, use_q=False,
                           "p": {f"{f},{t}": round(n / total, 3) for (f, t), n in top[:5]}})
         board.make(*mv)
     else:
-        res = adjudicate(board)
+        res, adjudicated = adjudicate(board), True
 
     if not xs:
         return None
@@ -86,7 +87,7 @@ def play_self_game(net, sims, rng, nprng, noise=True, use_q=False,
     Xm = X.reshape(-1, n_pl, 10, 9)[:, :, :, ::-1].reshape(len(X), -1).copy()
     pim = MIRROR_TABLE[pi_idx]
 
-    meta = {"result": res, "plies": len(xs), "moves": moves_log}
+    meta = {"result": res, "plies": len(xs), "moves": moves_log, "adjudicated": adjudicated}
     return (X, pi_idx, pi_p, z_final, Xm, pim), meta
 
 
