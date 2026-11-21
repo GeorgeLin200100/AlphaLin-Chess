@@ -33,7 +33,7 @@ def play_self_game(net, sims, rng, nprng, noise=True, use_q=False,
             break
         visits, root_value = search(board, net, sims=sims,
                                     dirichlet=0.3 if noise else 0.0,
-                                    rng=nprng, use_q=use_q)
+                                    rng=nprng, use_q=use_q, safety=True)
         if not visits:
             res = -board.side
             break

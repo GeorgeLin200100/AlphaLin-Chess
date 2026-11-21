@@ -75,7 +75,7 @@ def play_vs_random(net, sims, rng, net_side, use_q=False):
         if board.move_count >= 160:
             return adjudicate(board)
         if board.side == net_side:
-            visits, _ = search(board, net, sims=sims, use_q=use_q)
+            visits, _ = search(board, net, sims=sims, use_q=use_q, safety=True)
             if not visits:
                 return -net_side
             mv = max(visits.items(), key=lambda kv: kv[1])[0]
@@ -97,7 +97,7 @@ def play_vs_model(net_a, net_b, sims, rng, a_side, use_q=False):
         if board.move_count >= 160:
             return adjudicate(board)
         net = net_a if board.side == a_side else net_b
-        visits, _ = search(board, net, sims=sims, use_q=use_q)
+        visits, _ = search(board, net, sims=sims, use_q=use_q, safety=True)
         if not visits:
             return -board.side if board.side == a_side else board.side
         mv = max(visits.items(), key=lambda kv: kv[1])[0]

@@ -45,3 +45,13 @@ def adjust(board, value):
     if gain <= 0:
         return value
     return max(-1.0, min(1.0, value + DAMP * min(gain / SCALE, 1.0)))
+
+
+def forced_loss(board, mv, margin=1.0):
+    """走这步之后，对方能不能白赚 margin 以上的子力（近似 SEE）。返回净损失。"""
+    captured = board.sq[mv[1]]
+    gain = PIECE_VALUE[captured[0]] if captured is not None else 0.0
+    board.make(*mv)
+    risk = best_capture_gain(board)      # 对方视角的最好吃子收益
+    board.unmake()
+    return risk - gain
