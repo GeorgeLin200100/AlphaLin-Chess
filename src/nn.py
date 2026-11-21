@@ -1,14 +1,20 @@
-"""极简 numpy 神经网络：14x90 平面 -> 256 -> 256 -> {policy 8100, value 1}
+"""numpy 网络：双主干（策略一套隐层，价值一套隐层，互不干扰）。
 
-单核友好：纯 numpy 矩阵乘（AVX-512），Adam 优化器，自己写反向传播。
-参数量约 2.5M，单样本前向 ~2.1 MMAC。
+输入 18 平面 × 90 = 1620 维。
+
+为什么拆：之前两个头共用一个隐层，策略头有 8100 个输出，梯度量级远大于价值头
+（1 个输出）。训练步数一多，主干被改写成"专门服务策略"的形状，价值头读到的
+特征被冲掉。实测价值与子力的相关性从 +0.42 掉到 -0.07，棋力反而比热启动差。
+拆开之后两条梯度各走各的路，互不覆盖。
 """
 import numpy as np
 
-N_IN, H1, H2, N_POL = 18 * 90, 256, 256, 90 * 90   # 18 平面（14 棋子 + 4 威胁）
+N_IN, H_POL, H2_POL = 18 * 90, 256, 256      # 策略主干
+H_VAL, H2_VAL = 192, 128                     # 价值主干
+N_POL = 90 * 90
 
 
-def zeros_init(rng, fan_in, shape):
+def _init(rng, fan_in, shape):
     return (rng.standard_normal(shape) * np.sqrt(2.0 / fan_in)).astype(np.float32)
 
 
@@ -16,11 +22,15 @@ class Net:
     def __init__(self, seed=0):
         rng = np.random.default_rng(seed)
         self.p = {
-            "W1": zeros_init(rng, N_IN, (N_IN, H1)), "b1": np.zeros(H1, np.float32),
-            "W2": zeros_init(rng, H1, (H1, H2)), "b2": np.zeros(H2, np.float32),
-            "Wp": (rng.standard_normal((H2, N_POL)) * 0.01).astype(np.float32),
+            # 策略主干
+            "W1p": _init(rng, N_IN, (N_IN, H_POL)), "b1p": np.zeros(H_POL, np.float32),
+            "W2p": _init(rng, H_POL, (H_POL, H2_POL)), "b2p": np.zeros(H2_POL, np.float32),
+            "Wp": (rng.standard_normal((H2_POL, N_POL)) * 0.01).astype(np.float32),
             "bp": np.zeros(N_POL, np.float32),
-            "Wv": zeros_init(rng, H2, (H2, 1)), "bv": np.zeros(1, np.float32),
+            # 价值主干
+            "W1v": _init(rng, N_IN, (N_IN, H_VAL)), "b1v": np.zeros(H_VAL, np.float32),
+            "W2v": _init(rng, H_VAL, (H_VAL, H2_VAL)), "b2v": np.zeros(H2_VAL, np.float32),
+            "Wv": _init(rng, H2_VAL, (H2_VAL, 1)), "bv": np.zeros(1, np.float32),
         }
         self.m = {k: np.zeros_like(v) for k, v in self.p.items()}
         self.v = {k: np.zeros_like(v) for k, v in self.p.items()}
@@ -28,57 +38,53 @@ class Net:
 
     # ------------------------------------------------------------ 前向
     def forward(self, x):
-        """x: (B, 1260) -> logits (B, 8100), value (B, 1)"""
+        """x: (B, 1620) -> logits (B, 8100), value (B, 1)"""
         p = self.p
-        h1 = np.maximum(x @ p["W1"] + p["b1"], 0)
-        h2 = np.maximum(h1 @ p["W2"] + p["b2"], 0)
-        return h2 @ p["Wp"] + p["bp"], np.tanh(h2 @ p["Wv"] + p["bv"])
-
-    def evaluate(self, x1):
-        """单样本推理，返回 (logits 8100, value 标量)"""
-        p = self.p
-        h1 = np.maximum(x1 @ p["W1"] + p["b1"], 0)
-        h2 = np.maximum(h1 @ p["W2"] + p["b2"], 0)
-        return h2 @ p["Wp"] + p["bp"], float(np.tanh(h2 @ p["Wv"])[0])
-
-    def evaluate_moves(self, x1, idx):
-        """只算给定合法着法下标上的 logits（推理快 100 倍）；返回 (probs, value)。"""
-        p = self.p
-        h1 = np.maximum(x1 @ p["W1"] + p["b1"], 0)
-        h2 = np.maximum(h1 @ p["W2"] + p["b2"], 0)
-        sub = h2 @ p["Wp"][:, idx] + p["bp"][idx]
-        sub = sub - sub.max()
-        e = np.exp(sub)
-        probs = e / e.sum()
-        value = float(np.tanh(h2 @ p["Wv"] + p["bv"])[0])
-        return probs, value
+        h1 = np.maximum(x @ p["W1p"] + p["b1p"], 0)
+        h2 = np.maximum(h1 @ p["W2p"] + p["b2p"], 0)
+        logits = h2 @ p["Wp"] + p["bp"]
+        g1 = np.maximum(x @ p["W1v"] + p["b1v"], 0)
+        g2 = np.maximum(g1 @ p["W2v"] + p["b2v"], 0)
+        return logits, np.tanh(g2 @ p["Wv"] + p["bv"])
 
     def evaluate_sparse(self, feats, idx):
-        """稀疏输入推理：只 gather 约 32 行 W1，避免读 1.3MB 权重。"""
+        """稀疏输入推理：只 gather 活跃行。返回 (probs over idx, value)。"""
         p = self.p
-        h1 = p["W1"][feats].sum(0) + p["b1"]
+        h1 = p["W1p"][feats].sum(0) + p["b1p"]
         np.maximum(h1, 0, out=h1)
-        h2 = np.maximum(h1 @ p["W2"] + p["b2"], 0)
+        h2 = np.maximum(h1 @ p["W2p"] + p["b2p"], 0)
         sub = h2 @ p["Wp"][:, idx] + p["bp"][idx]
         sub = sub - sub.max()
         e = np.exp(sub)
         probs = e / e.sum()
-        value = float(np.tanh(h2 @ p["Wv"] + p["bv"])[0])
+        g1 = p["W1v"][feats].sum(0) + p["b1v"]
+        np.maximum(g1, 0, out=g1)
+        g2 = np.maximum(g1 @ p["W2v"] + p["b2v"], 0)
+        value = float(np.tanh(g2 @ p["Wv"] + p["bv"])[0])
         return probs, value
 
     # ------------------------------------------------------------ 训练
-    def train_step(self, x, pi, z, lr=1e-3, weight_decay=1e-4, policy_weight=1.0, pmask=None, vmask=None):
-        """一步 Adam。pi: (B,8100) 稀疏后仍为稠密小批量；z: (B,1) in [-1,1]"""
-        p, m, v = self.p, self.m, self.v
+    def _adam(self, name, g, lr):
+        b1_, b2_ = 0.9, 0.999
+        t = self.t
+        lr_t = lr * np.sqrt(1 - b2_ ** t) / (1 - b1_ ** t)
+        self.m[name] = b1_ * self.m[name] + (1 - b1_) * g
+        self.v[name] = b2_ * self.v[name] + (1 - b2_) * g * g
+        self.p[name] -= (lr_t * self.m[name] / (np.sqrt(self.v[name]) + 1e-8)).astype(np.float32)
+
+    def train_step(self, x, pi, z, lr=1e-3, weight_decay=1e-4, policy_weight=1.0,
+                   pmask=None, vmask=None):
+        """策略梯度只走策略主干，价值梯度只走价值主干。"""
+        p = self.p
         B = x.shape[0]
-        z1 = x @ p["W1"] + p["b1"]
+        self.t += 1
+
+        # ---- 策略分支
+        z1 = x @ p["W1p"] + p["b1p"]
         h1 = np.maximum(z1, 0)
-        z2 = h1 @ p["W2"] + p["b2"]
+        z2 = h1 @ p["W2p"] + p["b2p"]
         h2 = np.maximum(z2, 0)
         logits = h2 @ p["Wp"] + p["bp"]
-        vval = np.tanh(h2 @ p["Wv"] + p["bv"])
-
-        # softmax 交叉熵
         logits = logits - logits.max(axis=1, keepdims=True)
         e = np.exp(logits)
         prob = e / e.sum(axis=1, keepdims=True)
@@ -87,66 +93,70 @@ class Net:
         if pmask is not None:
             dlogits *= pmask.reshape(-1, 1)
 
-        dv = (vval - z) * (1 - vval ** 2) * 2 / B      # tanh 导数
-        if vmask is not None:
-            dv *= vmask.reshape(-1, 1)
-        loss_v = float(((vval - z) ** 2).mean())
-
         gWp = h2.T @ dlogits + weight_decay * p["Wp"]
         gbp = dlogits.sum(0)
-        gWv = h2.T @ dv + weight_decay * p["Wv"]
-        gbv = dv.sum(0)
-
-        dh2 = dlogits @ p["Wp"].T + dv @ p["Wv"].T
+        dh2 = dlogits @ p["Wp"].T
         dz2 = dh2 * (z2 > 0)
-        gW2 = h1.T @ dz2 + weight_decay * p["W2"]
+        gW2 = h1.T @ dz2 + weight_decay * p["W2p"]
         gb2 = dz2.sum(0)
-        dh1 = dz2 @ p["W2"].T
+        dh1 = dz2 @ p["W2p"].T
         dz1 = dh1 * (z1 > 0)
-        gW1 = x.T @ dz1 + weight_decay * p["W1"]
+        gW1 = x.T @ dz1 + weight_decay * p["W1p"]
         gb1 = dz1.sum(0)
+        for name, g in (("W1p", gW1), ("b1p", gb1), ("W2p", gW2), ("b2p", gb2),
+                        ("Wp", gWp), ("bp", gbp)):
+            self._adam(name, g, lr)
 
-        self.t += 1
-        t = self.t
-        b1_, b2_ = 0.9, 0.999
-        lr_t = lr * np.sqrt(1 - b2_ ** t) / (1 - b1_ ** t)
-        for name, g in (("W1", gW1), ("b1", gb1), ("W2", gW2), ("b2", gb2),
-                        ("Wp", gWp), ("bp", gbp), ("Wv", gWv), ("bv", gbv)):
-            m[name] = b1_ * m[name] + (1 - b1_) * g
-            v[name] = b2_ * v[name] + (1 - b2_) * g * g
-            p[name] -= (lr_t * m[name] / (np.sqrt(v[name]) + 1e-8)).astype(np.float32)
+        # ---- 价值分支
+        y1 = x @ p["W1v"] + p["b1v"]
+        k1 = np.maximum(y1, 0)
+        y2 = k1 @ p["W2v"] + p["b2v"]
+        k2 = np.maximum(y2, 0)
+        vval = np.tanh(k2 @ p["Wv"] + p["bv"])
+        loss_v = float(((vval - z) ** 2).mean())
+        dv = (vval - z) * (1 - vval ** 2) * 2 / B
+        if vmask is not None:
+            dv *= vmask.reshape(-1, 1)
+        gWv = k2.T @ dv + weight_decay * p["Wv"]
+        gbv = dv.sum(0)
+        dk2 = dv @ p["Wv"].T
+        dy2 = dk2 * (y2 > 0)
+        gW2v = k1.T @ dy2 + weight_decay * p["W2v"]
+        gb2v = dy2.sum(0)
+        dk1 = dy2 @ p["W2v"].T
+        dy1 = dk1 * (y1 > 0)
+        gW1v = x.T @ dy1 + weight_decay * p["W1v"]
+        gb1v = dy1.sum(0)
+        for name, g in (("W1v", gW1v), ("b1v", gb1v), ("W2v", gW2v), ("b2v", gb2v),
+                        ("Wv", gWv), ("bv", gbv)):
+            self._adam(name, g, lr)
         return loss_p, loss_v
 
     def train_value(self, x, z, lr=2e-3):
-        """只训练价值头（用于"子力先验"热启动）。"""
-        p, m, v = self.p, self.m, self.v
+        """只训练价值主干（热启动用）。"""
+        p = self.p
         B = x.shape[0]
-        z1 = x @ p["W1"] + p["b1"]
-        h1 = np.maximum(z1, 0)
-        z2 = h1 @ p["W2"] + p["b2"]
-        h2 = np.maximum(z2, 0)
-        vval = np.tanh(h2 @ p["Wv"] + p["bv"])
+        self.t += 1
+        y1 = x @ p["W1v"] + p["b1v"]
+        k1 = np.maximum(y1, 0)
+        y2 = k1 @ p["W2v"] + p["b2v"]
+        k2 = np.maximum(y2, 0)
+        vval = np.tanh(k2 @ p["Wv"] + p["bv"])
         loss = float(((vval - z) ** 2).mean())
         dv = (vval - z) * (1 - vval ** 2) * 2 / B
-        gWv = h2.T @ dv
+        gWv = k2.T @ dv
         gbv = dv.sum(0)
-        dh2 = dv @ p["Wv"].T
-        dz2 = dh2 * (z2 > 0)
-        gW2 = h1.T @ dz2
-        gb2 = dz2.sum(0)
-        dh1 = dz2 @ p["W2"].T
-        dz1 = dh1 * (z1 > 0)
-        gW1 = x.T @ dz1
-        gb1 = dz1.sum(0)
-        self.t += 1
-        t = self.t
-        b1_, b2_ = 0.9, 0.999
-        lr_t = lr * np.sqrt(1 - b2_ ** t) / (1 - b1_ ** t)
-        for name, g in (("W1", gW1), ("b1", gb1), ("W2", gW2), ("b2", gb2),
+        dk2 = dv @ p["Wv"].T
+        dy2 = dk2 * (y2 > 0)
+        gW2v = k1.T @ dy2
+        gb2v = dy2.sum(0)
+        dk1 = dy2 @ p["W2v"].T
+        dy1 = dk1 * (y1 > 0)
+        gW1v = x.T @ dy1
+        gb1v = dy1.sum(0)
+        for name, g in (("W1v", gW1v), ("b1v", gb1v), ("W2v", gW2v), ("b2v", gb2v),
                         ("Wv", gWv), ("bv", gbv)):
-            m[name] = b1_ * m[name] + (1 - b1_) * g
-            v[name] = b2_ * v[name] + (1 - b2_) * g * g
-            p[name] -= (lr_t * m[name] / (np.sqrt(v[name]) + 1e-8)).astype(np.float32)
+            self._adam(name, g, lr)
         return loss
 
     # ------------------------------------------------------------ 存取
