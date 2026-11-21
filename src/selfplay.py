@@ -13,7 +13,7 @@ from xiangqi import (Board, START_FEN, encode_planes, move_to_index,
 from mcts import search
 
 TOP_K = 16
-MAX_PLY = 160
+MAX_PLY = 300
 MIRROR_TABLE = np.array([mirror_move_index(i) for i in range(90 * 90)], dtype=np.int32)
 
 

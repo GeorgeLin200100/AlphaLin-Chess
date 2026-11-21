@@ -9,7 +9,7 @@ from xiangqi import (Board, encode_planes, encode_sparse, move_to_index,
                      adjudicate, is_repetition, RED)
 import quiescence
 
-MAX_PLY = 200
+MAX_PLY = 300
 NO_CAPTURE_DRAW = 100          # 60 步无吃子判和，避免早期大量无意义长局
 
 
