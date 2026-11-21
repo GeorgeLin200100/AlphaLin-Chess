@@ -67,7 +67,7 @@ class Net:
         return probs, value
 
     # ------------------------------------------------------------ 训练
-    def train_step(self, x, pi, z, lr=1e-3, weight_decay=1e-4, policy_weight=1.0, pmask=None):
+    def train_step(self, x, pi, z, lr=1e-3, weight_decay=1e-4, policy_weight=1.0, pmask=None, vmask=None):
         """一步 Adam。pi: (B,8100) 稀疏后仍为稠密小批量；z: (B,1) in [-1,1]"""
         p, m, v = self.p, self.m, self.v
         B = x.shape[0]
@@ -88,6 +88,8 @@ class Net:
             dlogits *= pmask.reshape(-1, 1)
 
         dv = (vval - z) * (1 - vval ** 2) * 2 / B      # tanh 导数
+        if vmask is not None:
+            dv *= vmask.reshape(-1, 1)
         loss_v = float(((vval - z) ** 2).mean())
 
         gWp = h2.T @ dlogits + weight_decay * p["Wp"]

@@ -62,9 +62,8 @@ def main():
         if payload is None:
             continue
         games += 1
-        if meta.get("adjudicated") and args.drop_adjudicated:
-            skipped += 1
-            continue
+        if meta.get("adjudicated"):
+            skipped += 1          # 只统计，不再丢弃
         gid = f"a{args.id}_{int(time.time()*1000)}_{games}"
         save_game(args.queue, gid, payload, meta)
 

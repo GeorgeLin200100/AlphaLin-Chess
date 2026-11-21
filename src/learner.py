@@ -28,14 +28,15 @@ from train import gen_material_samples, material_warmstart, play_vs_random, play
 def load_queue_file(path):
     d = np.load(path)
     X, pi_idx, pi_p, Z = d["X"], d["pi_idx"], d["pi_p"], d["Z"]
+    VW = d["VW"] if "VW" in d else np.ones(len(X), dtype=np.float32)
     Xm, pim = d["Xm"], d["pim"]
     out = []
     for i in range(len(X)):
         pi = [(m, p) for m, p in zip(pi_idx[i].tolist(), pi_p[i].tolist()) if m >= 0]
-        out.append((X[i], pi, float(Z[i])))
+        out.append((X[i], pi, float(Z[i]), float(VW[i])))
         if len(Xm):
             pi_m = [(m, p) for m, p in zip(pim[i].tolist(), pi_p[i].tolist()) if m >= 0]
-            out.append((Xm[i], pi_m, float(Z[i])))
+            out.append((Xm[i], pi_m, float(Z[i]), float(VW[i])))
     return out
 
 
@@ -85,6 +86,7 @@ class Learner:
         PI = np.zeros((a.batch, N_POL), dtype=np.float32)
         Z = np.empty((a.batch, 1), dtype=np.float32)
         PM = np.ones((a.batch, 1), dtype=np.float32)
+        VM = np.ones((a.batch, 1), dtype=np.float32)
         n_anchor = int(a.batch * a.anchor_prob)
         losses = []
         n = len(self.buffer)
@@ -92,8 +94,10 @@ class Learner:
             idxs = self.nprng.integers(0, n, size=a.batch - n_anchor)
             PI[:] = 0.0
             PM[:] = 1.0
+            VM[:] = 1.0
             for j, k in enumerate(idxs):
-                xs, pi, z = self.buffer[k]
+                xs, pi, z, vw = self.buffer[k]
+                VM[j, 0] = vw
                 X[j] = xs
                 for mi, p in pi:
                     PI[j, mi] = p
@@ -105,7 +109,7 @@ class Learner:
                 PM[a.batch - n_anchor:] = 0.0
             PI /= np.maximum(PI.sum(axis=1, keepdims=True), 1e-9)
             lp, lv = self.net.train_step(X, PI, Z, lr=a.lr,
-                                         policy_weight=a.policy_weight, pmask=PM)
+                                         policy_weight=a.policy_weight, pmask=PM, vmask=VM)
             losses.append((lp, lv))
         return (float(np.mean([x[0] for x in losses])),
                 float(np.mean([x[1] for x in losses])))

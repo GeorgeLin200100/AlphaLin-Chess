@@ -87,15 +87,16 @@ def play_self_game(net, sims, rng, nprng, noise=True, use_q=False,
     Xm = X.reshape(-1, n_pl, 10, 9)[:, :, :, ::-1].reshape(len(X), -1).copy()
     pim = MIRROR_TABLE[pi_idx]
 
+    VW = np.zeros(len(xs), dtype=np.float32) if adjudicated else np.ones(len(xs), dtype=np.float32)
     meta = {"result": res, "plies": len(xs), "moves": moves_log, "adjudicated": adjudicated}
-    return (X, pi_idx, pi_p, z_final, Xm, pim), meta
+    return (X, pi_idx, pi_p, z_final, Xm, pim, VW), meta
 
 
 def save_game(path_dir, gid, payload, meta):
-    X, pi_idx, pi_p, z, Xm, pim = payload
+    X, pi_idx, pi_p, z, Xm, pim, vw = payload
     tmp = os.path.join(path_dir, f".tmp_{gid}.npz")
     final = os.path.join(path_dir, f"{gid}.npz")
-    np.savez_compressed(tmp, X=X, pi_idx=pi_idx, pi_p=pi_p, Z=z,
+    np.savez_compressed(tmp, X=X, pi_idx=pi_idx, pi_p=pi_p, Z=z, VW=vw,
                         Xm=Xm, pim=pim, meta=np.array([meta["result"], meta["plies"]]))
     os.replace(tmp, final)
     return final
