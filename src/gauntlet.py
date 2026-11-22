@@ -63,7 +63,7 @@ def load_or_make_openings(run_dir, n_lines, plies):
     return lines, path
 
 
-def eval_point(net, lines, sims, max_ply=160):
+def eval_point(net, lines, sims, max_ply=160, use_q=False):
     rows = []
     w = d = l = 0
     for oi, line in enumerate(lines):
@@ -71,7 +71,7 @@ def eval_point(net, lines, sims, max_ply=160):
         for side in (RED, BLACK):
             rng = random.Random(1013 * oi + (0 if side == RED else 1) + 7)
             res = play_game(net, "greedy", sims, side, rng,
-                            max_ply=max_ply, start_moves=moves)
+                            max_ply=max_ply, start_moves=moves, use_q=use_q)
             if res == 0:
                 d += 1
             elif res == side:
@@ -107,6 +107,8 @@ def main():
                     help="开局条数，每条约红黑各一局")
     ap.add_argument("--plies", type=int, default=4)
     ap.add_argument("--hours", type=float, default=3)
+    ap.add_argument("--use-q", action="store_true", default=False,
+                    help="评测时也开启叶子吃子修正（测的是实际出厂的搜索配置）")
     ap.add_argument("--start-delay", type=float, default=20,
                     help="等 learner 发布权重后再评（秒）")
     args = ap.parse_args()
@@ -128,12 +130,13 @@ def main():
         try:
             net = Net.load(model)
             t0 = time.time()
-            g = eval_point(net, lines, args.sims)
+            g = eval_point(net, lines, args.sims, use_q=args.use_q)
             it, sp_games = last_iter(args.run)
             row = {"t": time.strftime("%H:%M:%S"), "ts": round(time.time(), 1),
                    "iter": it, "selfplay_games": sp_games,
                    "minutes": round((time.time() - t0) / 60, 2),
-                   "opponent": "greedy", "sims": args.sims, **g}
+                   "opponent": "greedy", "sims": args.sims,
+                   "use_q": bool(args.use_q), **g}
             with open(out_path, "a") as f:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
             print(f"[{row['t']}] iter {it} 自博弈 {sp_games} 局 -> "

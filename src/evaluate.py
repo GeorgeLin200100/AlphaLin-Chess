@@ -103,7 +103,7 @@ def greedy_move(board, rng):
     return best
 
 
-def play_game(net, opponent, sims, net_side, rng, max_ply=160, start_moves=None):
+def play_game(net, opponent, sims, net_side, rng, max_ply=160, start_moves=None, use_q=False):
     board = Board(START_FEN)
     iccs_hist = []
     eng = None
@@ -121,7 +121,7 @@ def play_game(net, opponent, sims, net_side, rng, max_ply=160, start_moves=None)
             res = adjudicate(board)
             break
         if board.side == net_side:
-            visits, _ = search(board, net, sims=sims, safety=True)
+            visits, _ = search(board, net, sims=sims, safety=True, use_q=use_q)
             if not visits:
                 res = -board.side
                 break
