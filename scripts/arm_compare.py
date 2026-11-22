@@ -39,8 +39,9 @@ def main():
     from nn import Net  # noqa: E402
     from mcts import search  # noqa: E402
     from evaluate import greedy_move  # noqa: E402
-    from xiangqi import (Board, START_FEN, adjudicate, move_to_index,  # noqa: E402
-                         feature_indices, RED, BLACK)
+    from xiangqi import (Board, START_FEN, adjudicate, is_repetition,  # noqa: E402
+                         move_to_index, feature_indices, RED, BLACK)
+    from mcts import NO_CAPTURE_DRAW  # noqa: E402
     import quiescence  # noqa: E402
 
     net = Net.load(args.ckpt)
@@ -87,6 +88,10 @@ def main():
             if res is not None:
                 return res
             if b.move_count >= args.max_ply:
+                return adjudicate(b)
+            if is_repetition(b):
+                return 0
+            if b.move_count - b.last_capture >= NO_CAPTURE_DRAW:
                 return adjudicate(b)
             mv = select(b) if b.side == side else greedy_move(b, rng)
             b.make(*mv)

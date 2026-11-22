@@ -2,21 +2,13 @@
  "ckpt": "runs/wide/model.npz",
  "sims": 240,
  "results": {
-  "search60": {
-   "win": 14,
-   "draw": 1,
-   "loss": 25,
+  "search240": {
+   "win": 22,
+   "draw": 3,
+   "loss": 15,
    "games": 40,
-   "score": 0.362,
-   "search_empty_fallbacks": 4
-  },
-  "search120": {
-   "win": 20,
-   "draw": 2,
-   "loss": 18,
-   "games": 40,
-   "score": 0.525,
-   "search_empty_fallbacks": 5
+   "score": 0.588,
+   "search_empty_fallbacks": 0
   },
   "search480": {
    "win": 25,
@@ -24,7 +16,7 @@
    "loss": 9,
    "games": 40,
    "score": 0.7,
-   "search_empty_fallbacks": 18
+   "search_empty_fallbacks": 0
   }
  }
 }

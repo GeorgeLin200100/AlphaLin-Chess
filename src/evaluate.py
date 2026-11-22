@@ -18,9 +18,10 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from xiangqi import Board, START_FEN, PIECE_VALUE, adjudicate, RED, BLACK, TYPE_CHARS
+from xiangqi import (Board, START_FEN, PIECE_VALUE, adjudicate, is_repetition,
+                     RED, BLACK, TYPE_CHARS)
 from nn import Net
-from mcts import search
+from mcts import search, NO_CAPTURE_DRAW
 
 SF = "/usr/games/fairy-stockfish"
 
@@ -121,9 +122,17 @@ def play_game(net, opponent, sims, net_side, rng, max_ply=160, start_moves=None,
             res = adjudicate(board)
             break
         if board.side == net_side:
+            # 搜索会把"三次重复""100 步无吃子"判成终局并返回空 visits，
+            # 那不是输棋，按规则算和棋/子力裁定，否则静局会被记成败局
+            if is_repetition(board):
+                res = 0
+                break
+            if board.move_count - board.last_capture >= NO_CAPTURE_DRAW:
+                res = adjudicate(board)
+                break
             visits, _ = search(board, net, sims=sims, safety=True, use_q=use_q)
             if not visits:
-                res = -board.side
+                res = 0
                 break
             mv = max(visits.items(), key=lambda kv: kv[1])[0]
         elif opponent == "random":

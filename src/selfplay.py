@@ -35,7 +35,8 @@ def play_self_game(net, sims, rng, nprng, noise=True, use_q=False,
                                     dirichlet=0.3 if noise else 0.0,
                                     rng=nprng, use_q=use_q, safety=True)
         if not visits:
-            res = -board.side
+            # 搜索判成终局（无吃子 100 步 / 规则和棋），按子力裁定，不能当输局记
+            res, adjudicated = adjudicate(board), True
             break
         total = sum(visits.values())
         temp = 1.0 if board.move_count < temp_plies else 0.05
