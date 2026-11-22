@@ -1,0 +1,27 @@
+{
+ "ckpt": "runs/wide/model.npz",
+ "sims": 240,
+ "results": {
+  "search240": {
+   "win": 22,
+   "draw": 3,
+   "loss": 15,
+   "games": 40,
+   "score": 0.588
+  },
+  "policy": {
+   "win": 0,
+   "draw": 1,
+   "loss": 39,
+   "games": 40,
+   "score": 0.013
+  },
+  "policy+sf": {
+   "win": 11,
+   "draw": 2,
+   "loss": 27,
+   "games": 40,
+   "score": 0.3
+  }
+ }
+}
