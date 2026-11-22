@@ -7,9 +7,14 @@
 特征被冲掉。实测价值与子力的相关性从 +0.42 掉到 -0.07，棋力反而比热启动差。
 拆开之后两条梯度各走各的路，互不覆盖。
 """
+import os
+
 import numpy as np
 
-N_IN, H_POL, H2_POL = 18 * 90, 256, 256      # 策略主干
+# 策略主干宽度可用环境变量覆盖（POL_H1 / POL_H2），默认 256 保持旧 checkpoint 兼容。
+N_IN = 18 * 90
+H_POL = int(os.environ.get("POL_H1", 256))
+H2_POL = int(os.environ.get("POL_H2", 256))
 H_VAL, H2_VAL = 192, 128                     # 价值主干
 N_POL = 90 * 90
 
