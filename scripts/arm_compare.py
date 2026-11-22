@@ -29,6 +29,8 @@ def main():
     ap.add_argument("--games", type=int, default=40)
     ap.add_argument("--sims", type=int, default=240)
     ap.add_argument("--max-ply", type=int, default=160)
+    ap.add_argument("--sweep", default="",
+                    help="只跑搜索臂，按这批 sims 逐个测，例如 60,120,240,480")
     args = ap.parse_args()
 
     with np.load(args.ckpt) as d:
@@ -51,9 +53,18 @@ def main():
         probs, _ = net.evaluate_sparse(feature_indices(b), idx)
         return legal, probs
 
-    def pick_search(b):
-        visits, _ = search(b, net, sims=args.sims, safety=True, use_q=True)
-        return max(visits.items(), key=lambda kv: kv[1])[0]
+    fallback = {"n": 0}
+
+    def make_pick_search(sims):
+        def pick(b):
+            visits, _ = search(b, net, sims=sims, safety=True, use_q=True)
+            if not visits:            # 低 sims 时安全过滤可能把根节点候选清空
+                fallback["n"] += 1
+                return pick_policy_sf(b)
+            return max(visits.items(), key=lambda kv: kv[1])[0]
+        return pick
+
+    pick_search = make_pick_search(args.sims)
 
     def pick_policy(b):
         legal, probs = policy_probs(b)
@@ -83,8 +94,12 @@ def main():
     print(f"权重 {args.ckpt}（宽 {w}），{n_lines} 个开局、每点 {2 * n_lines} 局，"
           f"对手一步贪心", flush=True)
     results = {}
-    for name, select in (("search240", pick_search), ("policy", pick_policy),
-                         ("policy+sf", pick_policy_sf)):
+    if args.sweep:
+        arms = [(f"search{s}", make_pick_search(int(s))) for s in args.sweep.split(",")]
+    else:
+        arms = [("search240", pick_search), ("policy", pick_policy),
+                ("policy+sf", pick_policy_sf)]
+    for name, select in arms:
         w_ = d_ = l_ = 0
         t0 = time.time()
         for oi, line in enumerate(lines[:n_lines]):
@@ -100,7 +115,8 @@ def main():
                     l_ += 1
         n = w_ + d_ + l_
         score = (w_ + 0.5 * d_) / n
-        results[name] = dict(win=w_, draw=d_, loss=l_, games=n, score=round(score, 3))
+        results[name] = dict(win=w_, draw=d_, loss=l_, games=n, score=round(score, 3),
+                             search_empty_fallbacks=fallback["n"])
         print(f"{name:10s} 胜/和/负 {w_}/{d_}/{l_}  得分 {score:.3f}  "
               f"({(time.time() - t0) / 60:.1f} min)", flush=True)
 
