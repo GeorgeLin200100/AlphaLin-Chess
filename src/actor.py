@@ -29,6 +29,8 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-q", action="store_true")
     ap.add_argument("--temp-plies", type=int, default=60)
+    ap.add_argument("--max-ply", type=int, default=300,
+                    help="一局最多多少手，到顶按子力裁定；评测是 160，自博弈建议对齐")
     ap.add_argument("--drop-adjudicated", action="store_true", default=False)
     args = ap.parse_args()
 
@@ -58,7 +60,8 @@ def main():
                 continue
         payload, meta = play_self_game(net, args.sims, rng, nprng,
                                        use_q=not args.no_q,
-                                       temp_plies=args.temp_plies)
+                                       temp_plies=args.temp_plies,
+                                       max_ply=args.max_ply)
         if payload is None:
             continue
         games += 1
