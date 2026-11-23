@@ -145,6 +145,14 @@ def main():
             import matplotlib
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
+            from matplotlib import font_manager as _fm
+
+            _FONT = "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"
+            if os.path.exists(_FONT):
+                if not any(f.name == "WenQuanYi Zen Hei" for f in _fm.fontManager.ttflist):
+                    _fm.fontManager.addfont(_FONT)
+                plt.rcParams["font.family"] = "WenQuanYi Zen Hei"
+            plt.rcParams["axes.unicode_minus"] = False
 
             fig, ax = plt.subplots(figsize=(6.4, 3.6), dpi=130)
             xs = [p[0] for p in pts]
