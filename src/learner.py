@@ -96,13 +96,18 @@ class Learner:
             self.log(f"续训：权重来自 {a.model}，门控基准同此")
         files = sorted(glob.glob(os.path.join(a.queue, "*.npz")))[-max(0, a.resume_files):]
         for f in files:
-            self.seen.add(os.path.basename(f))
+            self.seen.add(os.path.basename(f))       # 旧文件一律标记已消费，避免重复计数
+            if a.no_preload:
+                continue
             try:
                 for item in load_queue_file(f):
                     self.buffer.append(item)
             except Exception as e:
                 self.log(f"预热样本失败 {os.path.basename(f)}: {e}")
-        self.log(f"续训：预热 buffer {len(self.buffer)} 条（{len(files)} 个旧队列文件已标记消费）")
+        if a.no_preload:
+            self.log(f"续训：不预载旧样本，buffer 从 0 开始（已跳过 {len(files)} 个旧队列文件）")
+        else:
+            self.log(f"续训：预热 buffer {len(self.buffer)} 条（{len(files)} 个旧队列文件已标记消费）")
 
 
     def publish(self):
@@ -263,6 +268,8 @@ def main():
     ap.add_argument("--warmstart", type=int, default=300)
     ap.add_argument("--resume", action="store_true", default=False)
     ap.add_argument("--resume-files", type=int, default=400)
+    ap.add_argument("--no-preload", action="store_true", default=False,
+                    help="续训时不把旧队列样本灌进 buffer（避免开局反复刷上一版棋谱）")
     ap.add_argument("--use-q", action="store_true", default=False)
     ap.add_argument("--seed", type=int, default=11)
     args = ap.parse_args()
