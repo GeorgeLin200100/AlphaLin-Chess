@@ -10,14 +10,15 @@ MAXPLY=${4:-160}
 NACT=${5:-3}
 cd "$(dirname "$0")/.." || exit 1
 export POL_H1=512 POL_H2=512
-RUN=runs/deep8
+RUN=${RUN:-runs/deep8}
+LR=${LR:-5e-4}
 QUEUE=$RUN/queue
 MODEL=$RUN/model.npz
 mkdir -p "$QUEUE" "$RUN/games"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 
 .venv/bin/python src/learner.py --run "$RUN" --queue "$QUEUE" --model "$MODEL" \
-    --hours "$HOURS" --resume --use-q --buffer 30000 --train-every 4 --lr 5e-4 --steps 20 \
+    --hours "$HOURS" --resume --use-q --buffer 30000 --train-every 4 --lr "$LR" --steps 20 \
     --eval-every 10 --eval-games 20 --gate-every 40 --gate-games 30 &
 LPID=$!
 sleep 6
